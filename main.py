@@ -2,6 +2,7 @@ import os
 import sys
 import json
 import base64
+import re
 import requests
 import google.generativeai as genai
 
@@ -11,29 +12,41 @@ HF_TOKEN = os.getenv("HF_TOKEN")
 EARNKARO_EMAIL = os.getenv("EARNKARO_EMAIL")
 EARNKARO_PASSWORD = os.getenv("EARNKARO_PASSWORD")
 
-BOARD_NAME = "Trending Fashion Finds"
+# Board details
+PINTEREST_USERNAME = "my292tey"
+BOARD_SLUG = "trending-fashion-finds"
 
-def get_board_id():
+def get_board_id_direct():
+    board_url = f"https://www.pinterest.com/{PINTEREST_USERNAME}/{BOARD_SLUG}/"
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
+    }
+    try:
+        resp = requests.get(board_url, headers=headers, timeout=15)
+        if resp.status_code == 200:
+            # Look for 18-digit board ID in html data
+            match = re.search(r'"board_id":\s*"(\d{18})"', resp.text)
+            if not match:
+                match = re.search(r'"id":\s*"(\d{18})"', resp.text)
+            if match:
+                b_id = match.group(1)
+                print(f"Board ID successfully extracted: {b_id}")
+                return b_id
+    except Exception as e:
+        print(f"Direct scrape fallback warning: {e}")
+
+    # Fallback to Pinterest v5 API
     url = "https://api.pinterest.com/v5/boards"
-    headers = {"Authorization": f"Bearer {PINTEREST_TOKEN}"}
-    response = requests.get(url, headers=headers)
+    api_headers = {"Authorization": f"Bearer {PINTEREST_TOKEN}"}
+    response = requests.get(url, headers=api_headers)
     
-    if response.status_code != 200:
-        print(f"Error fetching boards: {response.text}")
-        sys.exit(1)
-        
-    boards = response.json().get("items", [])
-    for b in boards:
-        if b.get("name", "").strip().lower() == BOARD_NAME.lower():
-            print(f"Found Board ID for '{BOARD_NAME}': {b['id']}")
-            return b["id"]
+    if response.status_code == 200:
+        boards = response.json().get("items", [])
+        if boards:
+            print(f"Using board from API: {boards[0]['id']}")
+            return boards[0]["id"]
             
-    # Agar match na mile toh pehla board use kar lein
-    if boards:
-        print(f"Exact match nahi mila. Using first board: {boards[0]['name']} ({boards[0]['id']})")
-        return boards[0]["id"]
-        
-    print("Koi Pinterest board nahi mila!")
+    print("Pinterest board ID fetch nahi ho saka. Checking if Pinterest Business Account is active.")
     sys.exit(1)
 
 def generate_pin_content():
@@ -46,7 +59,7 @@ def generate_pin_content():
     {
       "title": "Catchy title under 50 chars",
       "description": "Aesthetic outfit description with 4 trending hashtags under 300 chars",
-      "image_prompt": "Fashion editorial photo prompt of stylish streetwear or ethnic outfit, cinematic lighting, 8k resolution"
+      "image_prompt": "Fashion catalog photo of trendy outfit, clean studio lighting, realistic, high resolution"
     }
     Return raw JSON only, no markdown formatting.
     """
@@ -57,7 +70,7 @@ def generate_pin_content():
 def generate_image(image_prompt):
     hf_url = "https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-xl-base-1.0"
     headers = {"Authorization": f"Bearer {HF_TOKEN}"}
-    payload = {"inputs": f"vogue fashion photography, {image_prompt}, high detail, photorealistic"}
+    payload = {"inputs": f"vogue fashion photography, {image_prompt}, high detail, 8k"}
     
     response = requests.post(hf_url, headers=headers, json=payload)
     if response.status_code == 200:
@@ -85,21 +98,21 @@ def create_pinterest_pin(board_id, title, description, base64_img, link="https:/
     }
     response = requests.post(url, headers=headers, json=payload)
     if response.status_code in [200, 201]:
-        print("Success! Pin create ho gaya:", response.json().get("id"))
+        print("Success! Pin successfully created on Pinterest:", response.json().get("id"))
     else:
-        print("Pinterest Pin creation error:", response.status_code, response.text)
+        print(f"Pinterest Pin creation error: {response.status_code} - {response.text}")
         sys.exit(1)
 
 if __name__ == "__main__":
-    print("Board dhoondh rahe hain...")
-    board_id = get_board_id()
+    print("Board ID retrieve kar rahe hain...")
+    board_id = get_board_id_direct()
     
-    print("Gemini se content generate kar rahe hain...")
+    print("Gemini se content generate ho raha hai...")
     content = generate_pin_content()
     print("Title:", content["title"])
     
-    print("Image generate ho rahi hai...")
+    print("Hugging Face se image generate ho rahi hai...")
     img_base64 = generate_image(content["image_prompt"])
     
-    print("Pinterest par pin post kar rahe hain...")
+    print("Pinterest par pin publish kar rahe hain...")
     create_pinterest_pin(board_id, content["title"], content["description"], img_base64)
