@@ -5,9 +5,10 @@ import base64
 import requests
 import google.generativeai as genai
 
-PINTEREST_TOKEN = os.getenv("PINTEREST_TOKEN")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-HF_TOKEN = os.getenv("HF_TOKEN")
+# Whitespace hatane ke liye .strip()
+PINTEREST_TOKEN = (os.getenv("PINTEREST_TOKEN") or "").strip()
+GEMINI_API_KEY = (os.getenv("GEMINI_API_KEY") or "").strip()
+HF_TOKEN = (os.getenv("HF_TOKEN") or "").strip()
 
 def get_target_board():
     url = "https://api.pinterest.com/v5/boards"
@@ -24,7 +25,7 @@ def get_target_board():
             print(f"Board mil gaya: {items[0]['name']} (ID: {items[0]['id']})")
             return items[0]["id"]
             
-    # Agar boards nahi mile toh naya board create karne ki koshish
+    # Naya board create karne ki koshish
     create_url = "https://api.pinterest.com/v5/boards"
     payload = {
         "name": "Trending Fashion Finds",
@@ -36,8 +37,7 @@ def get_target_board():
     print(f"Board create response: {create_resp.text}")
     
     if create_resp.status_code in [200, 201]:
-        b_id = create_resp.json().get("id")
-        return b_id
+        return create_resp.json().get("id")
         
     sys.exit(1)
 
